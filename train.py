@@ -42,7 +42,7 @@ def train(pointnet, optimizer, train_loader, val_loader=None, epochs=15, save=Tr
             optimizer.step()
 
             running_loss += loss.item()
-            if i % 20 == 0:
+            if i % 50 == 0:
                 print('[%d, %5d] loss: %.3f' % (epoch + 1, i + 1, running_loss / 10))
                 running_loss = 0.0
 
@@ -77,14 +77,11 @@ def train(pointnet, optimizer, train_loader, val_loader=None, epochs=15, save=Tr
 if __name__ == '__main__':
     pointnet = pt.PointNetSeg(classes=26)
     pointnet.to(device)
-    dataset_path = '../small_kitti'
-    dataset_path = '../../sem_kitti/dataset'
+    dataset_path = '/storage/gtrivigno/geospatial/sem_kitti/dataset'
     optimizer = torch.optim.Adam(pointnet.parameters(), lr=0.005)
-    train_ds  = ds.PointCloudData(dataset_path, sequences=[1, 10], start=0,   end=-1)
-    val_ds    = ds.PointCloudData(dataset_path, sequences=[3], start=0, end=-1)#end=1000)
-    # train_ds  = ds.PointCloudData(dataset_path, start=0,   end=100)
-    # val_ds    = ds.PointCloudData(dataset_path, start=100, end=120)
-    # warning: batch_size needs to be at least 2
-    train_loader  = ds.DataLoader( dataset=train_ds,  batch_size=5, shuffle=True  )
+    N_POINTS = 2000
+    train_ds  = ds.PointCloudData(dataset_path, sequences=[1, 4, 7], num_points=N_POINTS)
+    val_ds    = ds.PointCloudData(dataset_path, sequences=[3], num_points=N_POINTS)
+    train_loader  = ds.DataLoader( dataset=train_ds,  batch_size=8, shuffle=True, drop_last=True)
     val_loader    = ds.DataLoader( dataset=val_ds,    batch_size=5, shuffle=False )
     train(pointnet, optimizer, train_loader, val_loader, save=True)

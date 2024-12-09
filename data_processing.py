@@ -1,115 +1,56 @@
 import numpy as np
 import random
-import math
-import time
 import struct
 import os
+from glob import glob
 
 # pyTorch imports
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 from torchvision import transforms
-
-# a nice training progress bar
-from tqdm import tqdm
 
 # visualization
 import open3d as o3d
 import plotly.graph_objects as go
 
-
-
-numpoints = 20000 # [number of points]
-max_dist = 15     # [meters]
-min_dist = 4      # [meters]
-
-# transform distances to squares (code optimization)
-max_dist *= max_dist
-min_dist *= min_dist
-
-size_float = 4
-size_small_int = 2
-
-dataset_path =  "dataset"
-
-
     
 semantic_kitti_color_scheme = {
 0 : [0, 0, 0],        # "unlabeled"
-1 : [0, 0, 255],      # "outlier"
-10: [245, 150, 100],  # "car"
-11: [245, 230, 100],  # "bicycle"
-13: [250, 80, 100],   # "bus"
-15: [150, 60, 30],    # "motorcycle"
-16: [255, 0, 0],      # "on-rails"
-18: [180, 30, 80],    # "truck"
-20: [255, 0, 0],      # "other-vehicle"
-30: [30, 30, 255],    # "person"
-31: [200, 40, 255],   # "bicyclist"
-32: [90, 30, 150],    # "motorcyclist"
-40: [255, 0, 255],    # "road"
-44: [255, 150, 255],  # "parking"
-48: [75, 0, 75],      # "sidewalk"
-49: [75, 0, 175],     # "other-ground"
-50: [0, 200, 255],    # "building"
-51: [50, 120, 255],   # "fence"
-52: [0, 150, 255],    # "other-structure"
-60: [170, 255, 150],  # "lane-marking"
-70: [0, 175, 0],      # "vegetation"
-71: [0, 60, 135],     # "trunk"
-72: [80, 240, 150],   # "terrain"
-80: [150, 240, 255],  # "pole"
-81: [0, 0, 255],      # "traffic-sign"
-99: [255, 255, 50],   # "other-object"
-252: [245, 150, 100], # "moving-car"
-253: [200, 40, 255],  # "moving-bicyclist"
-254: [30, 30, 255],   # "moving-person"
-255: [90, 30, 150],   # "moving-motorcyclist"
-256: [255, 0, 0],     # "moving-on-rails"
-257: [250, 80, 100],  # "moving-bus"
-258: [180, 30, 80],   # "moving-truck"
-259: [255, 0, 0],     # "moving-other-vehicle"
+0 : [0, 0, 255],      # "outlier"
+1: [245, 150, 100],  # "car"
+2: [245, 230, 100],  # "bicycle"
+5: [250, 80, 100],   # "bus"
+3: [150, 60, 30],    # "motorcycle"
+5: [255, 0, 0],      # "on-rails"
+4: [180, 30, 80],    # "truck"
+5: [255, 0, 0],      # "other-vehicle"
+6: [30, 30, 255],    # "person"
+7: [200, 40, 255],   # "bicyclist"
+8: [90, 30, 150],    # "motorcyclist"
+9: [255, 0, 255],    # "road"
+10: [255, 150, 255],  # "parking"
+11: [75, 0, 75],      # "sidewalk"
+12: [75, 0, 175],     # "other-ground"
+13: [0, 200, 255],    # "building"
+14: [50, 120, 255],   # "fence"
+0: [0, 150, 255],    # "other-structure"
+9: [170, 255, 150],  # "lane-marking"
+15: [0, 175, 0],      # "vegetation"
+16: [0, 60, 135],     # "trunk"
+17: [80, 240, 150],   # "terrain"
+18: [150, 240, 255],  # "pole"
+19: [0, 0, 255],      # "traffic-sign"
+0: [255, 255, 50],   # "other-object"
+ 20: [245, 150, 100], # "moving-car"
+ 21: [200, 40, 255],  # "moving-bicyclist"
+ 22: [30, 30, 255],   # "moving-person"
+ 23: [90, 30, 150],   # "moving-motorcyclist"
+ 24: [255, 0, 0],     # "moving-on-rails"
+ 24: [250, 80, 100],  # "moving-bus"
+ 25: [180, 30, 80],   # "moving-truck"
+ 24: [255, 0, 0],     # "moving-other-vehicle"
 }
 
-
-# label_remap = {
-# 0 :  0, # "unlabeled"
-# 1 :  1, # "outlier"
-# 10:  2, # "car"
-# 11:  3, # "bicycle"
-# 13:  4, # "bus"
-# 15:  5, # "motorcycle"
-# 16:  6, # "on-rails"
-# 18:  7, # "truck"
-# 20:  8, # "other-vehicle"
-# 30:  9, # "person"
-# 31:  10, # "bicyclist"
-# 32:  11, # "motorcyclist"
-# 40:  12, # "road"
-# 44:  13, # "parking"
-# 48:  14, # "sidewalk"
-# 49:  15, # "other-ground"
-# 50:  16, # "building"
-# 51:  17, # "fence"
-# 52:  18, # "other-structure"
-# 60:  19, # "lane-marking"
-# 70:  20, # "vegetation"
-# 71:  21, # "trunk"
-# 72:  22, # "terrain"
-# 80:  23, # "pole"
-# 81:  24, # "traffic-sign"
-# 99:  25, # "other-object"
-# 252: 26, # "moving-car"
-# 253: 27, # "moving-bicyclist"
-# 254: 28, # "moving-person"
-# 255: 29, # "moving-motorcyclist"
-# 256: 30, # "moving-on-rails"
-# 257: 31, # "moving-bus"
-# 258: 32, # "moving-truck"
-# 259: 33, # "moving-other-vehicle"
-#     }
 label_remap= {
   0 : 0  ,    # "unlabeled"
   1 : 0  ,   # "outlier" mapped to "unlabeled" --------------------------mapped
@@ -146,11 +87,6 @@ label_remap= {
   258: 25,    # "moving-truck"
   259: 24,
 }
-remap_color_scheme = [
-  [0, 0, 0],
-  [0, 255, 0],
-  [0, 0, 255]
-]
 
 
 def sample(pointcloud, labels, numpoints_to_sample):
@@ -168,7 +104,7 @@ def sample(pointcloud, labels, numpoints_to_sample):
     return pointcloud_, labels_
 
 
-def readpc(pcpath, labelpath, reduced_labels=True):
+def readpc(pcpath, labelpath, max_dist=15**2, min_dist=4**2):
     """
     INPUT
         pcpath         : path to the point cloud ".bin" file
@@ -177,7 +113,8 @@ def readpc(pcpath, labelpath, reduced_labels=True):
                         [True]  -> values in range [0, 1, 2]   -- default
                         [False] -> all Semantic-Kitti dataset original labels
     """
-    
+    size_float = 4
+    size_small_int = 2
     pointcloud, labels = [], []
 
     with open(pcpath, "rb") as pc_file, open(labelpath, "rb") as label_file:
@@ -193,21 +130,17 @@ def readpc(pcpath, labelpath, reduced_labels=True):
 
             if min_dist<d<max_dist:
                 pointcloud.append([x, y, z])
-                if reduced_labels:            # for reduced labels range
-                    labels.append(label_remap[label])
-                else:                         # for full labels range
-                    labels.append(label)
+                labels.append(label_remap[label])
             
             byte = pc_file.read(size_float*4)
             label_byte = label_file.read(size_small_int)
             _ = label_file.read(size_small_int)
-        
-
+    
     pointcloud  = np.array(pointcloud)
     labels      = np.array(labels)
 
     # return fixed_sized lists of points/labels (fixed size: numpoints)
-    return sample(pointcloud, labels, numpoints)
+    return pointcloud, labels
 
 
 def remap_to_bgr(integer_labels, color_scheme):
@@ -216,6 +149,7 @@ def remap_to_bgr(integer_labels, color_scheme):
     bgr_labels.append(color_scheme[int(n)][::-1])
   np_bgr_labels = np.array(bgr_labels)
   return np_bgr_labels
+
 
 def draw_geometries(geometries):
     graph_objects = []
@@ -288,6 +222,7 @@ def visualize3DPointCloud(np_pointcloud, np_labels):
   # visualize the colored point cloud
   o3d.visualization.draw_geometries([pcd])
 
+
 class Normalize(object):
     def __call__(self, pointcloud):
         assert len(pointcloud.shape)==2
@@ -304,24 +239,20 @@ class ToTensor(object):
         return torch.from_numpy(pointcloud)
     
 
-def default_transforms():
-    return transforms.Compose([
-                                Normalize(),
-                                ToTensor()
-                              ])
-
-from glob import glob
 class PointCloudData(Dataset):
-    def __init__(self, dataset_path, transform=default_transforms(), sequences=[1], start=0, end=1000):
-        """
-          INPUT
-              dataset_path: path to the dataset folder
-              transform   : transform function to apply to point cloud
-              start       : index of the first file that belongs to dataset
-              end         : index of the first file that do not belong to dataset
-        """
+    def __init__(self, dataset_path, sequences=[1], num_points=5000, max_dist=15, min_dist=4):
+        # transform distances to squares (code optimization)
+        max_dist *= max_dist
+        min_dist *= min_dist
+        self.max_dist = max_dist
+        self.min_dist = min_dist
+
         self.dataset_path = dataset_path
-        self.transforms = transform
+        self.n_points = num_points
+        self.transforms = transforms.Compose([
+            Normalize(),
+            ToTensor()
+        ])
 
         all_seqs = os.listdir(os.path.join(self.dataset_path, "sequences"))
         self.pc_paths = []
@@ -335,47 +266,17 @@ class PointCloudData(Dataset):
                 self.lb_paths += sorted(glob(lb_path + '/*'))
         assert(len(self.pc_paths) == len(self.lb_paths))
 
-        self.start = start
-        self.end   = end
-        
-        # clip paths according to the start and end ranges provided in input
-        if end != -1:
-            self.pc_paths = self.pc_paths[start: end]
-            self.lb_paths = self.lb_paths[start: end]
-
     def __len__(self):
         return len(self.pc_paths)
 
     def __getitem__(self, idx):
-    #   item_name = str(idx + self.start).zfill(6)
-    #   pcpath = os.path.join(self.pc_path, item_name + ".bin")
-    #   lbpath = os.path.join(self.lb_path, item_name + ".label")
-      pcpath = self.pc_paths[idx]
-      lbpath = self.lb_paths[idx]
-      # load points and labels
-      pointcloud, labels = readpc(pcpath, lbpath)
+        pcpath = self.pc_paths[idx]
+        lbpath = self.lb_paths[idx]
+        # load points and labels
+        pointcloud, labels = readpc(pcpath, lbpath, max_dist=self.max_dist, min_dist=self.min_dist)
+        pointcloud, labels = sample(pointcloud, labels, self.n_points)
 
-      # transform
-      torch_pointcloud  = torch.from_numpy(pointcloud)
-      torch_labels      = torch.from_numpy(labels)
-
-      return torch_pointcloud, torch_labels
-
-
-if __name__ == '__main__':
-    # define point cloud example index and absolute paths
-    pointcloud_index = 146
-    pcpath    = os.path.join(dataset_path, "sequences", "00", "velodyne", str(pointcloud_index).zfill(6) + ".bin"  )
-    labelpath = os.path.join(dataset_path, "sequences", "00", "labels",   str(pointcloud_index).zfill(6) + ".label")
-
-    # load pointcloud and labels with original Semantic-Kitti labels
-    pointcloud, labels = readpc(pcpath, labelpath, False)
-    labels = remap_to_bgr(labels, semantic_kitti_color_scheme)
-    print("Semantic-Kitti original color scheme")
-    visualize3DPointCloud(pointcloud, labels)
-
-    # load pointcloud and labels with remapped labels
-    pointcloud, labels = readpc(pcpath, labelpath)
-    labels = remap_to_bgr(labels, remap_color_scheme)
-    print("Remapped color scheme")
-    visualize3DPointCloud(pointcloud, labels)
+        # transform
+        torch_pointcloud = self.transforms(pointcloud)
+        torch_labels      = torch.from_numpy(labels)
+        return torch_pointcloud, torch_labels
